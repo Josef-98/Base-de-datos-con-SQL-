@@ -1,0 +1,192 @@
+SELECT* FROM ACCOUNTS;
+
+SELECT* FROM FORECASTS;
+
+SELECT* FROM SALES;
+
+--1. Análisis completo de ventas y beneficio por producto
+
+SELECT  CATEGORY,
+SUM(PRODUCT), 
+SUM(MAINTENANCE) AS MANTENIMIENTO, 
+SUM(PARTS), 
+SUM(SUPPORT), 
+SUM(PROFIT) AS BENEFICIO_TOTAL, 
+AVG(PROFIT) AS PROMEDIO_TOTAL, 
+SUM(UNITS_SOLD) AS UNIDADES_VENDIDADAS
+
+FROM SALES
+Where YEAR = 2020 AND ACCOUNT = 'Abbot Industries'
+GROUP BY CATEGORY;
+
+--los productos q mas vendieron fueron chairs y desk luego break rooms y electronics. Aunque se vendio mas unidades de break rooms (1745.88) que de electronics (1308.29), electronics genero mayor profits para la empresa (312830.00 - Electronics) vs (298196.00 - Break room).
+
+
+--2. Cálculo de pronóstico total y beneficio esperado
+
+SELECT 
+COALESCE(S.CATEGORY, F.CATEGORY) AS CATEGORIAS,
+SUM(S.PROFIT) AS Total_Profit_overall,
+SUM(F.FORECAST_PROFIT) AS Total_Forecast,
+MAX(F.OPPORTUNITY_AGE) AS OLD_OPPORTUNITY,
+MIN(F.OPPORTUNITY_AGE) AS YOUNG_OPPORTUNITY,
+SUM(CASE WHEN s.quarter = '2020 Q1' THEN profit ELSE 0 END) AS BENEFICIO_VENTAS_Q1_2020,
+SUM(CASE WHEN s.quarter = '2021 Q3' THEN profit ELSE 0 END) AS BENEFICIO_VENTAS_Q3_2021
+FROM SALES AS S
+FULL OUTER JOIN FORECASTS AS F 
+            ON S.CATEGORY = F.CATEGORY AND S.YEAR= F.YEAR,
+WHERE (S.YEAR = 2020 AND S.QUARTER_OF_YEAR = 'Q1') OR (S.YEAR = 2021 AND S.QUARTER_OF_YEAR = 'Q3') OR F.YEAR = 2022
+GROUP BY CATEGORIAS;
+
+-- Podemos ver que la categoria con el mejor pronostico total para el 2022 es Break Room, le siguen Electronics, Desk y por ultimo Chairs. Tambien podemos observar que    Break room es la categoria que mas profit genera. Para el primer trimestre de 2020 se puede observar que que Break room sigue siendo la categoria con mayoir beneficio en ventas casi duplicando las otras categorias, seguido de Chairs y Desks con valores muy similares. Para tercer trimestre de 2021 se puede seguir observando como Break Room sigue siendo la categoria lider con mayor beneficio en ventas casi triplicando a las demas categorias, tambien se puede observar como Desk aumento considerablemente su beneficio en ventas para el año 2021 siendo ahora la segunda categoria con mejor beneficio en ventas. Hay que hacer enfasis en como Chairs fue la categoria que aumento en menos cantidad el beneficio en ventas para dicho año y colocandose como la categoria cpn menor beneficio en ventas y caso contrario ocurrio con la categoria Electronics la cual consigio aumentar en gran cantidad su beneficio en venta y llegando a superar a esta ultima. 
+
+
+--3. Comparación de ventas, unidades vendidas y beneficio entre industrias en APAC y EMEA
+
+SELECT 
+    A.INDUSTRY,
+    A.COUNTRY,
+
+    SUM(CASE WHEN A.REGION = 'APAC' THEN UNITS_SOLD ELSE 0 END) AS UNIDADES_VENDIDAS_APAC,
+    SUM(CASE WHEN A.REGION = 'EMEA' THEN UNITS_SOLD ELSE 0 END) AS UNIDADES_VENDIDAS_EMEA,
+    
+    SUM(CASE WHEN A.REGION = 'APAC' THEN PRODUCT ELSE 0 END) AS INGRESO_BRUTO_APAC,
+    SUM(CASE WHEN A.REGION = 'EMEA' THEN PRODUCT ELSE 0 END) AS INGRESO_BRUTO_EMEA,
+
+    SUM(CASE WHEN A.REGION = 'APAC' THEN PROFIT ELSE 0 END) AS BENEFICIO_APAC,
+    SUM(CASE WHEN A.REGION = 'EMEA' THEN PROFIT ELSE 0 END) AS BENEFICIO_EMEA,
+
+    ROUND(AVG(CASE WHEN A.REGION = 'APAC' THEN PROFIT ELSE NULL END),2) AS BENEFICIO_PROMEDIO_APAC,
+    ROUND(AVG(CASE WHEN A.REGION = 'EMEA' THEN PROFIT ELSE NULL END),2) AS BENEFICIO_PROMEDIO_EMEA
+
+FROM 
+    SALES 
+JOIN 
+    ACCOUNTS AS A 
+                ON SALES.ACCOUNT = A.ACCOUNT
+WHERE 
+    A.REGION IN ('APAC', 'EMEA') 
+GROUP BY 
+    A.COUNTRY, A.INDUSTRY;
+
+
+-- Se puede concluir por los resultados obtenidos que las regiones APAC y EMEA es la manera en como la empresa separa o divide los distintos paises en el mundo. La region APAC posee los paises Australia, Japon, Korea y Singapur, es decir los paises de oceania y asia, continentes cercanos que se encuentra uno encima del otro. Mientras que la region EMEA comprende y posee puros paises del contienente EUROPA. Logicamente como las regiones es utilizada para separar Europa de Oceania y Asia, cuando una region tiene unidades vendidas la otra region tendra 0, por ende una tendra ingreso bruto, beneficio (profit) y beneficio promedio y la otra tendra los valores en 0 y viceversa.
+
+
+--4. Beneficio por tipo de empresa
+
+SELECT 
+A.INDUSTRY, 
+SUM(S.PROFIT) AS BENEFICIO_TOTAL,
+
+CASE 
+WHEN SUM(S.PROFIT) > 1000000 THEN 'ALTO'
+    ELSE 'NORMAL'
+    END AS CLASIFICACION
+FROM ACCOUNTS AS A LEFT JOIN SALES AS S
+                                        ON A.ACCOUNT = S.ACCOUNT
+WHERE S.ACCOUNT IN (SELECT ACCOUNT FROM FORECASTS WHERE YEAR = 2022 GROUP BY ACCOUNT HAVING SUM(FORECAST_PROFIT)>500000)
+GROUP BY A.INDUSTRY;
+
+-- Se puede observar en los resultados obtenidos que todas las cuentas con un pronostico superior a 500.000 en el año 2022 tienen un pronostico total ALTO, a excepcion de solo una cuenta ¨Banking¨ la cual tiene un pronostico total normal.
+
+    
+--5. Beneficio acumulado por trimestre particionado por industria
+
+SELECT 
+    v.industry AS INDUSTRIA, 
+    v.quarter AS TRIMESTRE_YEAR,
+    SUM(v.profit) AS BENEFICIO_TOTAL,
+    MAX(v.beneficio_acumulado) AS MAX_BENEFICIO_ACUMULADO, -- Máximo acumulado de beneficios hasta el trimestre
+    MAX(v.pronostico_acumulado) AS MAX_PREDICCION_ACUMULADA, -- Máximo acumulado de pronósticos por industria
+    MIN(v.opportunity_age) AS MIN_OPORTUNIDAD_RECIENTE, -- Edad de la oportunidad más reciente
+    MAX(v.opportunity_age) AS MAX_OPORTUNIDAD_ANTIGUA -- Edad de la oportunidad más antigua
+FROM GROUNDHOG_DB.SMART_DESK.INDUSTRY_QUARTER_WINDOW AS v
+GROUP BY v.industry, v.quarter
+ORDER BY v.industry, v.quarter;
+
+--Se puede oberservar que en la mayoria de los casos el beneficio acumulado hasta la fehca (profit) es considerablemente mayor que el maximo de prediccion acumulada, es decir que para la mayoria de las industrias se termino generando mas profit que el que se tenia previsto en un principio lo cual es algo extremadamente positivo. Claro esto no sucede para todos los casos, porque exste algunos ejemplos donde se da el caso contrario, y el profit generado y acumulado hasta la fehca termino siendo inferior al que se tenia previsto, como es el caso de "Retail" donde se termino teniendo un beneficio acumulado de 6395950.00 y se tenia previsto para esa fecha (2021 Q4) un acumulado de 7403898.00. Este tipo de casos son malas noticias para cualquier empresa pero al analizar los resultados obtenidos detenidamente se pueden ver como dicho caso solo ocurre en muy pocas industrias por lo que de manera general la mayor parte de las industrias generaron un beneficio total acumulado mayor que el previsto para la fecha. 
+
+
+--CASO PRACTICO. COMPETENCIA POR BONUS EXTRA AL FINAL DEL AÑO
+
+--Los jefes y gerentes de la empresa quieren fomentar la sana competencia entre los ejecutivos que llevan cuentas para aumentar la productividad, para esto se les ocurrio hacer una competencia con sus rendimientos como base, ofreciendo bonus extra a finales del año (2021). De esta manera los ejecutivos se veran mas animados y entusiasmados de trabajar mas arduamente para poder ganarle a sus compañeros y obtener dicho bonus, de tal manera se aumenta el rendimiento, productividad, la sana competencia, el liderazgo y la union entre los miembros de la empresa. Se escogeran 5 ejecutivos al final de los cuales se hara un ranking por posiciones y se les ofrecera un porcentaje del profit generado por ellos para asi fomentar aun mas el rendimiento, mientras mas dinero generen a la empresa mas dinero se podran llevar como comision/premio. El primer lugar se llevara un 5% de comision, el segundo un 4%, el tercero un 3%, el cuarto un 2% y el quinto lugar se llevra un 1%. 
+
+--Para realizar el ranking se tomara en cuanta distintos parametros teniendo siempre el rendimiento como base. Se necesitara conocer cuantos ejecutivos que llevan cuentas se encuentran en la empresa para saber cuantos estaran compitiendo por los cinco primeros lugares.
+
+-- Se necesitara saber el numero de cuentas que lleva cada ejecutivo, mientras mas cuentas manejan es debido a que tienen mas habilidad y por eso se les confian mas cuentas, tambien por ende trabajan mas tiempo porque tienen que enfocarse en mas cuentas. Pero tambien juega a su favor tener mas cuentas debido a que les permitira generar mayor profit, el cual es el parametro mas fundamental a tomar en cuenta. 
+
+--Por la razon anterior nos interesa saber el numero de ejecutivos por cuenta. Si cada cuenta es llevada solo por un ejecutivo nos facilitara mucho el calculo y la distribucion de meritocracia, si hay un ejecutivo por cuenta sabemos que dicho ejecutivo tiene el 100% de resposabilidad y nos facilita el calculo. 
+
+--Principalmente nos interesa saber que ejecutivo genero mas profit en total, debido a que es el parametro mas fundamental a tomar en cuenta en nuestra competencia. 
+
+--Tambien queremos conocer cual cuenta fue la que genero mas profit de manera individual, para saber que ejecutivo fue el responsable de producir la cuenta con mayor ganancias y asi podemos saber si es merecedor/a de que le confien mas cuentas. 
+
+
+
+-- Primero se procede a saber cuantos ejecutivos hay por cuenta: 
+
+SELECT ACCOUNT, COUNT(ACCOUNT_EXECUTIVE)
+FROM ACCOUNTS
+GROUP BY ACCOUNT;
+
+-- Se puede observar que solo hay un ejecutivo por cuenta, lo que nos facilitara mucho el trabajo. 
+
+
+
+--Luego se procede a ver que ejecutivos tienen el mayor numero de cuentas para el año 2021
+SELECT ACCOUNT_EXECUTIVE,COUNT(*) NUMERO_CUENTAS, S.YEAR
+FROM ACCOUNTS INNER JOIN SALES AS S ON ACCOUNTS.ACCOUNT=S.ACCOUNT
+WHERE S.YEAR = 2021
+GROUP BY ACCOUNT_EXECUTIVE, S.YEAR
+ORDER BY NUMERO_CUENTAS DESC;
+
+--Podemos observar que ejecutivos tienen mayor numero de cuentas y por ende podemos asumr que son los mas capaces y los que mayor probabilidad tienen de ganar la competencia: 
+
+--Ranking con numero de cuentas: 
+
+--Emily Wolfe	    #6
+--Donovan Gardner	#6
+--Gray Joyner	    #6
+--Cole Hartman	    #5
+--Dawn Boyer	    #4
+--Inga Lancaster	#4
+
+
+--Luego procedemos a obtener el parametro mas fundamental a tomar en cuenta, y es el profit obtenido por cada ejecutivo y lo ordenamos para conocer quien genero la mayor cantidad de profit: 
+
+SELECT DISTINCT ACCOUNT_EXECUTIVE, COUNT(*) AS NUMERO_CUENTAS,SUM(S.PROFIT), SUM(S.UNITS_SOLD), S.YEAR
+FROM ACCOUNTS INNER JOIN SALES AS S ON ACCOUNTS.ACCOUNT=S.ACCOUNT
+WHERE S.YEAR = 2021
+GROUP BY ACCOUNT_EXECUTIVE, S.YEAR
+ORDER BY NUMERO_CUENTAS DESC;
+
+--Actualizamos la tabla que teniamos anteriomente: 
+--Ranking con Profit vs Ranking con numero de cuentas:
+
+--Gray Joyner	    #6	   $3624369.00       Emily Wolfe	    #6 
+--Donovan Gardner	#6	   $3589484.00       Donovan Gardner	#6
+--Cole Hartman	    #5	   $3542373.00       Gray Joyner	    #6
+--Calista Johns	    #3	   $2755643.00       Cole Hartman	    #5
+--Emily Wolfe	    #6	   $2454239.00       Dawn Boyer	        #4
+--Holly Kirby	    #2	   $2225664.00       Inga Lancaster  	#4
+
+
+--Por ultimo vamos a obtener que cuenta genero mayor profit y procederemos a analizar los resultados para armar nuestro ranking top 5: 
+ 
+SELECT A.ACCOUNT, A.ACCOUNT_EXECUTIVE,SUM(S.PROFIT) AS SUMA_PROFIT
+FROM ACCOUNTS AS A INNER JOIN SALES AS S ON A.ACCOUNT=S.ACCOUNT
+GROUP BY A.ACCOUNT, A.ACCOUNT_EXECUTIVE
+ORDER BY SUMA_PROFIT DESC;
+
+--Los resultados obtenidos son muy interesantes porque la cuenta que obtuvo mayor profit termino duplicando el profit generado por las demas cuentas, mientras que los resulados de las demas cuentas no son muy distintos el uno del otro:
+
+-- Stanton's Inc.	Calista Johns	
+
+--Analisis y resultado final TOP 5: 
+
+--TOP 1 (5% comision): Gray Joyner	    #6	   $3624369.00. Tiene el mayor numero de cuentas y obtuvo el profit mas grande. 
+--TOP 2 (4% comision): Donovan Gardner	#6	   $3589484.00. Tambien posee 6 cuentas y obtuvo el segundo profit mas grande. 
+--TOP 3 (3% comision): Cole Hartman	    #5	   $3542373.00. Tiene un reconocimiento especial, obtuvo profits similares al top 1 y 2 con un numero inferior de cuentas.
+--TOP 4 (2% comision): Calista Johns	#3	   $2755643.00. Obtuvo la cuenta que genero mas profits de manera individual y solo tiene 3 cuentas. Se recomienda darle mas cuentas para que las dirija (probablemente si lleva mas cuentas quedara en el TOP 1 o 2)
+--TOP 5 (1% comision): Holly Kirby	    #2	   $2225664.00. Colocamos a Holly de quinto lugar en vez de Emily, que genero un poco mas de profit, debido a que el beneficio que ambas generaron es muy parecido pero Emily tiene 6 cuentas a su cargo mientras que Holly solo tiene 2 cuentas a su cargo. En otrasw palabras con 4 cuentas menos genero casi el mismo profit. Tambien se recomiendo darle mas cuentas a Holly a su cargo. 
